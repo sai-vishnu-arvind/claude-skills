@@ -5,30 +5,29 @@ description: Configure Claude Code to auto-approve safe operations without promp
 
 # Auto-Approve Permissions
 
-Adds broad `permissions.allow` patterns to your Claude Code `settings.json` so safe operations run silently. Risky destructive operations are left out — Claude still asks for those.
+Adds a broad `Bash(*)` allow pattern to your Claude Code `settings.json` so all shell commands run silently, including compound commands (pipes, semicolons, redirects). Risky destructive operations are explicitly denied — Claude still asks for those.
 
 ## What Gets Auto-Approved
 
-| Category | Examples |
+| Category | Pattern |
 |----------|---------|
-| File tools | Read, Write, Edit, Glob, Grep (all paths) |
-| Read-only git | status, diff, log, show, branch, fetch, stash list |
-| Safe git writes | add, commit, checkout, switch, restore, stash save/pop/apply |
-| Build/test | go, npm, yarn, pnpm, bun, make, python3, pip |
-| Shell utilities | ls, cat, grep, find, echo, mkdir, touch, head, tail, wc, sort, awk, sed, jq, curl, which, pwd |
+| File tools | Read(*), Write(*), Edit(*), Glob(*), Grep(*), LS(*) |
+| All shell commands | Bash(*) — including pipes, chains, compound commands |
 
-## What Still Prompts
+## What Still Prompts (deny list)
 
-- `git push` (pushes to remote — always good to confirm)
-- `git reset --hard`, `git clean -f`, `git rebase`
-- `rm` (any form, especially `rm -rf`)
-- `sudo`
-- SQL `DROP`, `TRUNCATE`, `DELETE FROM`
-- `git push --force` / `git push -f`
+- `git push` — pushes to remote
+- `git push --force` — force push
+- `git reset --hard` — destructive local reset
+- `git clean -f`, `git clean -fd` — deletes untracked files
+- `git rebase` — history rewrite
+- `rm -rf` — recursive delete
+- `sudo rm`, `sudo *` — any sudo command
+- SQL `DROP *`, `TRUNCATE *`
 
 ## How to Apply
 
-Run the setup script — it reads your existing `settings.json` and merges in the allow patterns without touching anything else:
+Run the setup script — it reads your existing `settings.json` and merges in the allow/deny patterns without touching anything else:
 
 ```bash
 python3 ~/.claude/skills/auto-approve/scripts/apply_permissions.py
@@ -54,8 +53,10 @@ python3 ~/.claude/skills/auto-approve/scripts/apply_permissions.py --remove
 
 After applying, restart Claude Code for the changes to take effect.
 
+## Why Bash(*) instead of individual patterns?
+
+Individual patterns like `Bash(find *)` only match commands that start with that exact word. Compound commands like `find ... | head -5; ls ...` don't match any single pattern and still prompt. Using `Bash(*)` + a deny list for dangerous commands is simpler and covers all cases.
+
 ## Customizing
 
-The allow/deny lists are defined at the top of `scripts/apply_permissions.py`. Edit `ALLOW_PATTERNS` to add or remove patterns. Use `DENY_PATTERNS` for operations that should be blocked entirely (not just prompted).
-
-Pattern format: `ToolName(glob)` — e.g., `Bash(go test*)`, `Read(*)`, `Bash(docker *)`.
+The allow/deny lists are defined at the top of `scripts/apply_permissions.py`. Edit `DENY_PATTERNS` to add more operations that should be blocked. Pattern format: `ToolName(glob)` — e.g., `Bash(docker rm*)`.
