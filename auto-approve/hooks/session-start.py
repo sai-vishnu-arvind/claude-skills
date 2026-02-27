@@ -28,7 +28,7 @@ from pathlib import Path
 APPLY_SCRIPT = Path.home() / ".claude" / "skills" / "auto-approve" / "scripts" / "apply_permissions.py"
 
 def main():
-    if not APPROY_SCRIPT.exists():
+    if not APPLY_SCRIPT.exists():
         sys.exit(0)
 
     result = subprocess.run(
