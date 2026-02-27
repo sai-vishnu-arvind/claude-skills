@@ -5,6 +5,9 @@ Auto-Approve Permissions Configurator for Claude Code
 Merges safe allow/deny patterns into ~/.claude/settings.json (or project-local
 .claude/settings.json) so Claude stops prompting for routine operations.
 
+Uses Bash(*) + a deny list instead of individual command patterns, so compound
+commands (pipes, semicolons, redirects) are also auto-approved.
+
 Usage:
     python3 apply_permissions.py              # Apply to global settings
     python3 apply_permissions.py --dry-run   # Preview changes
@@ -18,7 +21,7 @@ import os
 import sys
 from pathlib import Path
 
-# ── Customize these lists ────────────────────────────────────────────────────
+# Customize these lists
 
 ALLOW_PATTERNS = [
     # File operation tools — always safe
@@ -28,106 +31,24 @@ ALLOW_PATTERNS = [
     "Glob(*)",
     "Grep(*)",
     "LS(*)",
-
-    # Read-only git
-    "Bash(git status*)",
-    "Bash(git diff*)",
-    "Bash(git log*)",
-    "Bash(git show*)",
-    "Bash(git branch*)",
-    "Bash(git fetch*)",
-    "Bash(git stash list*)",
-    "Bash(git stash show*)",
-
-    # Safe git writes (no remote mutations, no history rewrites)
-    "Bash(git add*)",
-    "Bash(git commit*)",
-    "Bash(git checkout*)",
-    "Bash(git switch*)",
-    "Bash(git restore*)",
-    "Bash(git stash save*)",
-    "Bash(git stash pop*)",
-    "Bash(git stash apply*)",
-    "Bash(git stash drop*)",
-    "Bash(git tag*)",
-
-    # Go toolchain
-    "Bash(go build*)",
-    "Bash(go test*)",
-    "Bash(go run*)",
-    "Bash(go mod*)",
-    "Bash(go generate*)",
-    "Bash(go vet*)",
-    "Bash(go lint*)",
-    "Bash(go fmt*)",
-    "Bash(go install*)",
-    "Bash(go clean*)",
-    "Bash(golangci-lint*)",
-
-    # Node/JS toolchains
-    "Bash(npm *)",
-    "Bash(yarn *)",
-    "Bash(pnpm *)",
-    "Bash(bun *)",
-    "Bash(node *)",
-    "Bash(npx *)",
-
-    # Python
-    "Bash(python *)",
-    "Bash(python3 *)",
-    "Bash(pip *)",
-    "Bash(pip3 *)",
-    "Bash(poetry *)",
-    "Bash(uv *)",
-
-    # Build tools
-    "Bash(make *)",
-    "Bash(cargo *)",
-
-    # Common shell utilities (safe reads/inspection)
-    "Bash(ls*)",
-    "Bash(cat *)",
-    "Bash(head *)",
-    "Bash(tail *)",
-    "Bash(grep *)",
-    "Bash(rg *)",
-    "Bash(find *)",
-    "Bash(echo *)",
-    "Bash(printf *)",
-    "Bash(mkdir *)",
-    "Bash(touch *)",
-    "Bash(cp *)",
-    "Bash(mv *)",
-    "Bash(wc *)",
-    "Bash(sort *)",
-    "Bash(uniq *)",
-    "Bash(awk *)",
-    "Bash(sed *)",
-    "Bash(jq *)",
-    "Bash(curl *)",
-    "Bash(which *)",
-    "Bash(type *)",
-    "Bash(pwd*)",
-    "Bash(env*)",
-    "Bash(export *)",
-    "Bash(source *)",
-    "Bash(chmod *)",
-    "Bash(test *)",
-    "Bash(true*)",
-    "Bash(false*)",
-    "Bash(date*)",
-    "Bash(whoami*)",
-    "Bash(id *)",
+    # All shell commands — compound commands (pipes, chains) need this broad pattern
+    "Bash(*)",
 ]
 
-# Patterns to BLOCK entirely (Claude refuses, not just prompts).
-# Leave empty to let dangerous commands still prompt rather than block.
-DENY_PATTERNS: list[str] = []
-
-# Marker used to track which patterns we added (for --remove)
-MARKER = "# auto-approve-skill"
-
-# ─────────────────────────────────────────────────────────────────────────────
+# Patterns to BLOCK entirely — deny takes precedence over allow.
+DENY_PATTERNS = [
+    "Bash(git push*)",
+    "Bash(git push --force*)",
+    "Bash(git reset --hard*)",
+    "Bash(git clean -f*)",
+    "Bash(git clean -fd*)",
+    "Bash(git rebase*)",
+    "Bash(rm -rf*)",
+    "Bash(sudo rm*)",
+    "Bash(sudo *)",
+    "Bash(DROP *)",
+    "Bash(TRUNCATE *)",
+]
 
 
 def find_settings_file(local: bool) -> Path:
@@ -151,7 +72,6 @@ def save_settings(path: Path, data: dict) -> None:
 
 
 def apply_patterns(settings: dict) -> tuple[dict, int, int]:
-    """Merge allow/deny patterns into settings. Returns (updated, added_allow, added_deny)."""
     perms = settings.setdefault("permissions", {})
     existing_allow: list = perms.setdefault("allow", [])
     existing_deny: list = perms.setdefault("deny", [])
@@ -172,18 +92,16 @@ def apply_patterns(settings: dict) -> tuple[dict, int, int]:
 
 
 def remove_patterns(settings: dict) -> tuple[dict, int, int]:
-    """Remove only the patterns this script manages."""
     perms = settings.get("permissions", {})
     before_allow = list(perms.get("allow", []))
     before_deny = list(perms.get("deny", []))
 
-    perms["allow"] = [p for p in before_allow if p not in ALLOW_PATTERNS]
+    perms["allow"] = [p for p in before_allow if p not in ALLOW_PATTERNR]
     perms["deny"] = [p for p in before_deny if p not in DENY_PATTERNS]
 
     removed_allow = len(before_allow) - len(perms["allow"])
     removed_deny = len(before_deny) - len(perms["deny"])
 
-    # Clean up empty permissions key
     if not perms["allow"] and not perms["deny"]:
         del perms["allow"]
         del perms["deny"]
@@ -205,7 +123,7 @@ def main():
 
     if args.remove:
         updated, removed_allow, removed_deny = remove_patterns(settings)
-        print(f"Removing {removed_allow} allow and {removed_deny} deny pattern(s) from {settings_path}")
+        print(f"Removing {removed_allow} allow and {removed_dez} deny pattern(s) from {settings_path}")
         if args.dry_run:
             print("\n[dry-run] No changes written.")
         else:
@@ -218,9 +136,9 @@ def main():
     print(f"Settings file: {settings_path}")
     print(f"  Adding {added_allow} allow pattern(s)")
     if added_deny:
-        print(f"  Adding {added_deny} deny pattern(s)")
+        print(f"  Adding {added_dez} deny pattern(s)")
     if added_allow == 0 and added_deny == 0:
-        print("  All patterns already present — nothing to do.")
+        print("  All patterns already present - nothing to do.")
         return
 
     if args.dry_run:
@@ -237,8 +155,8 @@ def main():
         save_settings(settings_path, updated)
         print("\nDone. Restart Claude Code for changes to take effect.")
         print("\nOperations that still require confirmation:")
-        print("  git push, git reset, git clean, git rebase")
-        print("  rm (all variants), sudo, DROP/TRUNCATE, git push --force")
+        print("  git push, git push --force, git reset --hard, git clean, git rebase")
+        print("  rm -rf, sudo *, DROP *, TRUNCATE *")
 
 
 if __name__ == "__main__":
